@@ -1,30 +1,32 @@
-import React from 'react';
-import { Lightbulb } from 'lucide-react';
-import { useNewsContext } from '../context/NewsContext';
+import React from "react";
+import { Lightbulb } from "lucide-react";
+import { useNewsContext } from "../context/NewsContext";
 
 const suggestedQueries = [
   "What are the latest tech industry developments?",
-  "Summarize today's top political news",
-  "Recent breakthroughs in renewable energy",
+  "latest news",
+  "lates sports updates",
   "Major sports events this week",
-  "Latest health and wellness trends"
+  "Latest health and wellness trends",
 ];
 
 const SuggestedQueries: React.FC = () => {
   const { submitQuery, currentResponse } = useNewsContext();
-  
+
   // Don't show suggestions if we already have a response
   if (currentResponse) {
     return null;
   }
-  
+
   return (
     <div className="w-full max-w-3xl mx-auto mt-6">
       <div className="flex items-center mb-3">
         <Lightbulb className="w-4 h-4 text-amber-500 mr-2" />
-        <h3 className="text-sm font-medium text-gray-700">Try asking about...</h3>
+        <h3 className="text-sm font-medium text-gray-700">
+          Try asking about...
+        </h3>
       </div>
-      
+
       <div className="flex flex-wrap gap-2">
         {suggestedQueries.map((query, index) => (
           <button
