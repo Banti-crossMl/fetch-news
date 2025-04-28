@@ -1,53 +1,135 @@
-import Groq from "groq-sdk";
-import { newsToolDefinition } from "./newsTools";
+import { ChatGroq } from "@langchain/groq";
+import { HumanMessage } from "@langchain/core/messages";
+import { DynamicStructuredTool } from "@langchain/core/tools";
 import { QueryResponse, NewsArticle } from "../types";
 
-const DEMO_API_KEY = `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`;
-
-const WORLD_NEWS_API_KEY = "ed144c499040c0c1260fea06f4b5be79";
-
-// Initialize the Groq client
-const groq = new Groq({
-  apiKey: DEMO_API_KEY,
-  dangerouslyAllowBrowser: true, // Only for testing. DO NOT use in production frontend.
+const model = new ChatGroq({
+  apiKey: import.meta.env.VITE_GROQ_API_KEY,
+  model: "llama3-70b-8192",
 });
 
-// Fetch real news articles using newsdata.io API
-async function fetchRealNews(query: string, count = 8): Promise<NewsArticle[]> {
-  console.log("Fetching real news articles...", query);
+async function fetchRealNews(
+  query: string,
+  count = 10
+): Promise<NewsArticle[]> {
+  try {
+    const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
+      query
+    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}&num=${count}`;
 
-  // Construct the GNews API URL
-  const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(
-    query
-  )}&token=${WORLD_NEWS_API_KEY}&lang=en&max=${count}`;
+    const res = await fetch(url);
+    const data = await res.json();
 
-  // Fetch data from GNews API
-  const res = await fetch(url);
-  const data = await res.json();
+    if (data.error) {
+      console.error("Error fetching news:", data.error);
+      return [];
+    }
 
-  if (data.error) {
-    console.error(
-      "Error fetching news:",
-      data.error.message || "Unknown error"
+    if (!data.news_results) {
+      console.warn("No news results found");
+      return [];
+    }
+
+    const articles: NewsArticle[] = [];
+
+    data.news_results.forEach((result: any) => {
+      if (result.highlight) {
+        articles.push({
+          title: result.highlight.title,
+          url: result.highlight.link,
+          source:
+            result.highlight.source?.name ||
+            result.highlight.source ||
+            "Unknown",
+          publishedAt: result.highlight.date || new Date().toISOString(),
+          description: "",
+          urlToImage: result.highlight.thumbnail || null,
+        });
+      }
+
+      if (result.stories && Array.isArray(result.stories)) {
+        result.stories.forEach((story: any) => {
+          articles.push({
+            title: story.title,
+            url: story.link,
+            source: story.source?.name || story.source || "Unknown",
+            publishedAt: story.date || new Date().toISOString(),
+            description: "",
+            urlToImage: story.thumbnail || null,
+          });
+        });
+      }
+
+      if (result.title && result.link) {
+        articles.push({
+          title: result.title,
+          url: result.link,
+          source: result.source?.name || result.source || "Unknown",
+          publishedAt: result.date || new Date().toISOString(),
+          description: "",
+          urlToImage: result.thumbnail || null,
+        });
+      }
+    });
+
+    const uniqueArticles = articles.filter(
+      (article, index, self) =>
+        index === self.findIndex((a) => a.url === article.url)
     );
+
+    return uniqueArticles.slice(0, count);
+  } catch (err) {
+    console.error("Fetch error:", err);
     return [];
   }
-
-  // Return the mapped articles
-  return data.articles.map((article: any) => ({
-    title: article.title,
-    url: article.url,
-    source: article.source.name,
-    publishedAt: article.publishedAt,
-    description: article.description,
-    urlToImage: article.image,
-  }));
 }
 
-// Function to handle query and return Groq-powered response
+const fetchNewsTool = new DynamicStructuredTool({
+  name: "fetch_news",
+  description: "Fetch news articles based on a query or topic",
+  schema: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The search query for news articles",
+      },
+      source: {
+        type: "string",
+        description: "Specific news source to filter by (optional)",
+        enum: ["bbc-news", "cnn", "the-verge", "wired", "reuters", "any"],
+      },
+      category: {
+        type: "string",
+        description: "News category (optional)",
+        enum: [
+          "business",
+          "entertainment",
+          "general",
+          "health",
+          "science",
+          "sports",
+          "technology",
+        ],
+      },
+      limit: {
+        type: "integer",
+        description: "Maximum number of articles to return (1-10)",
+        minimum: 1,
+        maximum: 10,
+      },
+    },
+    required: ["query"],
+  },
+  func: async ({ query, limit }: { query: string; limit?: number }) => {
+    const articles = await fetchRealNews(query, limit || 5);
+    return articles;
+  },
+});
+
 export async function queryNewsAI(query: string): Promise<QueryResponse> {
   try {
-    // Simulate delay for UX
+    // Delay for UX
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
     if (query.toLowerCase().includes("error")) {
@@ -57,74 +139,38 @@ export async function queryNewsAI(query: string): Promise<QueryResponse> {
       };
     }
 
-    return await realQueryImplementation(query);
-  } catch (error) {
-    console.error("Error querying Groq:", error);
+    const messages = [new HumanMessage(query)];
+
+    // Send to model with tool
+    const response = await model.invoke(messages, {
+      tools: [fetchNewsTool],
+    });
+
+    const content = response.content;
+    const functionCall = (response.additional_kwargs as any)?.tool_calls?.[0];
+
+    if (functionCall) {
+      const args = JSON.parse(functionCall.function.arguments);
+      const articles = await fetchRealNews(args.query, args.limit || 5);
+      return {
+        type: "news",
+        text: content || "Here are the latest articles:",
+        articles,
+      };
+    } else {
+      // No tool call made
+      const articles = await fetchRealNews(query, 2);
+      return {
+        type: "answer",
+        text: content || "No specific tool call made. Showing articles.",
+        sourceArticles: articles,
+      };
+    }
+  } catch (err) {
+    console.error("LangChain Error:", err);
     return {
       type: "error",
       message: "Failed to process your request. Please try again later.",
     };
   }
-}
-
-// Handles AI function calling with real news
-export async function realQueryImplementation(
-  query: string
-): Promise<QueryResponse> {
-  const tools: Groq.Chat.Completions.ChatCompletionTool[] = [
-    newsToolDefinition,
-  ];
-
-  const messages: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
-    {
-      role: "user",
-      content: query,
-    },
-  ];
-
-  const initialResponse = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages,
-    tools,
-    tool_choice: "auto",
-  });
-
-  const toolCall = initialResponse.choices[0]?.message?.tool_calls?.[0];
-
-  if (!toolCall || toolCall.type !== "function") {
-    return {
-      type: "answer",
-      text: initialResponse.choices[0].message.content || "No tool call made.",
-      sourceArticles: await fetchRealNews(query, 2),
-    };
-  }
-
-  const args = JSON.parse(toolCall.function.arguments) as { query: string };
-
-  const toolResult: NewsArticle[] = await fetchRealNews(args.query || query);
-
-  messages.push({
-    role: "assistant",
-    tool_calls: [toolCall],
-  });
-
-  messages.push({
-    role: "tool",
-    tool_call_id: toolCall.id,
-    content: JSON.stringify(toolResult),
-  });
-
-  const finalResponse = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages,
-    tools,
-  });
-
-  const finalMessage = finalResponse.choices[0].message;
-
-  return {
-    type: "news",
-    articles: toolResult,
-    text: finalMessage.content || "",
-  };
 }
