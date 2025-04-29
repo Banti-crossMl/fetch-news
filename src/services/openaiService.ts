@@ -15,16 +15,19 @@ async function fetchRealNews(
   try {
     // const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
     //   query
-    // )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
+    // )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}&num=${count}`;
 
-    const baseUrl =
-      import.meta.env.MODE === "development"
-        ? "/api/serp"
-        : "https://serpapi.com";
+    // Check if the environment is development or production
+    const isDev = import.meta.env.MODE === "development";
 
-    const url = `${baseUrl}/search.json?engine=google_news&q=${encodeURIComponent(
+    // In development, use the proxy; in production, use the direct API URL
+    const baseUrl = isDev
+      ? "/api/serp/search.json" // Proxy URL in development
+      : "https://serpapi.com/search.json"; // Direct API URL in production
+
+    const url = `${baseUrl}?engine=google_news&q=${encodeURIComponent(
       query
-    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
+    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}&num=${count}`;
 
     const res = await fetch(url);
     const data = await res.json();
