@@ -13,11 +13,18 @@ async function fetchRealNews(
   count = 10
 ): Promise<NewsArticle[]> {
   try {
-    const apiKey = import.meta.env.VITE_SERPAPI_KEY;
+    // const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
+    //   query
+    // )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
 
-    const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
+    const baseUrl =
+      import.meta.env.MODE === "development"
+        ? "/api/serp"
+        : "https://serpapi.com";
+
+    const url = `${baseUrl}/search.json?engine=google_news&q=${encodeURIComponent(
       query
-    )}&api_key=${apiKey}`;
+    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
 
     const res = await fetch(url);
     const data = await res.json();
