@@ -15,7 +15,7 @@ async function fetchRealNews(
   try {
     const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
       query
-    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}&num=${count}`;
+    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
 
     const res = await fetch(url);
     const data = await res.json();
