@@ -13,9 +13,11 @@ async function fetchRealNews(
   count = 10
 ): Promise<NewsArticle[]> {
   try {
+    const apiKey = import.meta.env.VITE_SERPAPI_KEY;
+
     const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
       query
-    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}`;
+    )}&api_key=${apiKey}`;
 
     const res = await fetch(url);
     const data = await res.json();
