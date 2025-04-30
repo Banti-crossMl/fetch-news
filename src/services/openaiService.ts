@@ -8,80 +8,31 @@ const model = new ChatGroq({
   model: "llama3-70b-8192",
 });
 
-async function fetchRealNews(
-  query: string,
-  count = 10
-): Promise<NewsArticle[]> {
-  try {
-    const url = `/api/serp/search.json?engine=google_news&q=${encodeURIComponent(
-      query
-    )}&api_key=${import.meta.env.VITE_SERPAPI_KEY}&num=${count}`;
+async function fetchRealNews(query: string): Promise<NewsArticle[]> {
+  const url = `https://gnews.io/api/v4/search?q=${encodeURIComponent(
+    query
+  )}&token=${import.meta.env.VITE_WORLD_NEWS_API_KEY}&lang=en`;
 
-    const res = await fetch(url);
-    const data = await res.json();
+  // Fetch data from GNews API
+  const res = await fetch(url);
+  const data = await res.json();
 
-    if (data.error) {
-      console.error("Error fetching news:", data.error);
-      return [];
-    }
-
-    if (!data.news_results) {
-      console.warn("No news results found");
-      return [];
-    }
-
-    const articles: NewsArticle[] = [];
-
-    data.news_results.forEach((result: any) => {
-      if (result.highlight) {
-        articles.push({
-          title: result.highlight.title,
-          url: result.highlight.link,
-          source:
-            result.highlight.source?.name ||
-            result.highlight.source ||
-            "Unknown",
-          publishedAt: result.highlight.date || new Date().toISOString(),
-          description: "",
-          urlToImage: result.highlight.thumbnail || null,
-        });
-      }
-
-      if (result.stories && Array.isArray(result.stories)) {
-        result.stories.forEach((story: any) => {
-          articles.push({
-            title: story.title,
-            url: story.link,
-            source: story.source?.name || story.source || "Unknown",
-            publishedAt: story.date || new Date().toISOString(),
-            description: "",
-            urlToImage: story.thumbnail || null,
-          });
-        });
-      }
-
-      if (result.title && result.link) {
-        articles.push({
-          title: result.title,
-          url: result.link,
-          source: result.source?.name || result.source || "Unknown",
-          publishedAt: result.date || new Date().toISOString(),
-          description: "",
-          urlToImage: result.thumbnail || null,
-        });
-      }
-    });
-
-    const uniqueArticles = articles.filter(
-      (article, index, self) =>
-        index === self.findIndex((a) => a.url === article.url)
+  if (data.error) {
+    console.error(
+      "Error fetching news:",
+      data.error.message || "Unknown error"
     );
-
-    return uniqueArticles.slice(0, count);
-  } catch (err) {
-    console.error("Fetch error:", err);
     return [];
   }
+
+  return data.articles.map((article: any) => ({
+    title: article.title,
+    url: article.url,
+    source: article.source.name,
+    publishedAt: article.publishedAt,
+    description: article.description,
+    urlToImage: article.image,
+  }));
 }
 
 const fetchNewsTool = new DynamicStructuredTool({
@@ -112,17 +63,11 @@ const fetchNewsTool = new DynamicStructuredTool({
           "technology",
         ],
       },
-      limit: {
-        type: "integer",
-        description: "Maximum number of articles to return (1-10)",
-        minimum: 1,
-        maximum: 10,
-      },
     },
     required: ["query"],
   },
-  func: async ({ query, limit }: { query: string; limit?: number }) => {
-    const articles = await fetchRealNews(query, limit || 5);
+  func: async ({ query }: { query: string }) => {
+    const articles = await fetchRealNews(query);
     return articles;
   },
 });
@@ -151,7 +96,7 @@ export async function queryNewsAI(query: string): Promise<QueryResponse> {
 
     if (functionCall) {
       const args = JSON.parse(functionCall.function.arguments);
-      const articles = await fetchRealNews(args.query, args.limit || 5);
+      const articles = await fetchRealNews(args.query);
       return {
         type: "news",
         text: content || "Here are the latest articles:",
@@ -159,7 +104,7 @@ export async function queryNewsAI(query: string): Promise<QueryResponse> {
       };
     } else {
       // No tool call made
-      const articles = await fetchRealNews(query, 2);
+      const articles = await fetchRealNews(query);
       return {
         type: "answer",
         text: content || "No specific tool call made. Showing articles.",
